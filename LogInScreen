@@ -1,0 +1,497 @@
+from BTCInput import *
+import time
+import re
+import pickle
+import os
+import random
+import string
+import secrets
+
+
+class UsernameValidator:
+    def __init__(self, username, worker_dictionary):
+        self.username = username
+        self.worker_dictionary = worker_dictionary
+    
+    def validate_username(self):
+        if not (6 <= len(self.username) <= 18):
+            return False, 'Your username requires a length between 6-18 characters.'
+        
+        if not all(c.isalnum() or c in '-_' for c in self.username):
+            return False, 'Your username can only use letters, numbers, hyphens or underscores.'
+        
+        if self.username[0] in '_-':
+            return False, 'Username cannot start with a hyphen or an underscore'
+        
+        if self.username in self.worker_dictionary:
+            return False, 'Username is already in use. Please choose another username.'
+
+        return True, 'Username is valid.'
+
+
+class PasswordValidator:
+    def __init__(self, password):
+        self.password = password
+
+    def validate_password(self):
+        if not (6 <= len(self.password) <= 18):
+            return False, 'Your password requires a length between 6-18 characters.'
+    
+        if not any(c.isupper() for c in self.password):
+            return False, 'Your password requires at least one uppercase letter.'
+    
+        if not any(c.islower() for c in self.password):
+            return False, 'Your password requires at least one lowercase letter.'
+    
+        if not any(c.isdigit() for c in self.password):
+            return False, 'Your password requires at least one digit.'
+    
+        if not any(c in '!#$%&' for c in self.password):
+            return False, 'Your password must include at least one of these special characters !#$%&.'
+    
+        if not all(c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!#$%&" for c in self.password):
+            return False, 'Please read the password rules for eligible characters.'
+    
+        return True, 'Password is saved.'
+
+class WorkerProfile:
+    def __init__(self, first_name, last_name, username, password, role=None, access_level=None, date_added=None):
+        self.__first_name = first_name
+        self.__last_name = last_name
+        self.__username = username
+        self.__password = password
+        self.role = None
+        self.__access_level = None
+        self.__date_added = date_added
+        self.__failed_attempts = 0
+        self.__is_locked = False
+
+    def set_role(self, role):
+        self.role = role
+
+    def set_access_level(self, access_level):
+        self.__access_level = access_level
+
+    def profile_information(self):
+        return {
+            'first_name': self.__first_name,
+            'last_name': self.__last_name,
+            'username': self.__username,
+            'password': self.__password,
+            'role': self.role,
+            'access_level': self.__access_level,
+            'date_added': self.__date_added,
+            'failed_attempts': self.__failed_attempts,
+            'is_locked': self.__is_locked
+        }
+
+    def check_password(self, password):
+        return self.__password == password
+
+    def increment_failed_attempts(self):
+        self.__failed_attempts += 1
+        if self.__failed_attempts >= 3:
+            self.__is_locked = True
+
+    def reset_failed_attempts(self):
+        self.__failed_attempts = 0
+
+    def is_locked(self):
+        return self.__is_locked
+    
+    def __str__(self):
+        return f'Username: {self.__username}, First Name: {self.__first_name}, Last Name: {self.__last_name}, Role: {self.role}, Access Level: {self.__access_level}, Date Added: {self.__date_added}, Locked: {self.__is_locked}'
+
+    
+
+class Manager(WorkerProfile):
+    def __init__(self, first_name, last_name, username, password, date_added):
+        super().__init__(first_name, last_name, username, password, date_added)
+        self.set_role('Manager')  # Set the role explicitly in the Manager class
+
+    def edit_worker_role(self, worker, new_role):
+        worker.set_role(new_role)     
+    
+    def edit_worker_access_level(self, worker, new_access_level):
+        worker.set_access_level(new_access_level)
+
+
+class Storage:
+    def __init__(self):
+        self.__Worker_dictionary = {}
+
+    def save_worker(self, worker_filename):
+        with open(worker_filename, 'wb') as workerprofile_file:
+            pickle.dump(self.__Worker_dictionary, workerprofile_file)
+
+    def load_workers(self, worker_filename):
+        try:
+            if os.path.getsize(worker_filename) > 0:
+                with open(worker_filename, 'rb') as workerprofile_file:
+                    self.__Worker_dictionary = pickle.load(workerprofile_file)
+                print('The employees list has been loaded.')
+            else:
+                print('The employees file is empty. Creating a blank employee dictionary.')
+        except FileNotFoundError:
+            print('The workers profile file cannot be found. Creating a blank employee profile dictionary.')
+        except Exception as e:
+            print(f"Error loading worker file: {e}")
+
+    def list_workers(self):
+        worker_profiles = [str(self.__Worker_dictionary[username]) for username in self.__Worker_dictionary]
+        worker_list = '\n'.join(worker_profiles)
+        template = '''Current employees\n\n{0}\n'''
+        return template.format(worker_list)
+
+    def remove_worker(self, username):
+        if username in self.__Worker_dictionary:
+            del self.__Worker_dictionary[username]
+            print(f"Employee with the username '{username}' has been removed.")
+        else:
+            print('This username cannot be found.')
+
+    def check_username(self, username):
+        return username in self.__Worker_dictionary
+    
+    def add_worker(self, worker_profile):
+        self.__Worker_dictionary[worker_profile['username']] = worker_profile
+
+    def verify_login(self, username, password):
+        if username in self.__Worker_dictionary:
+            worker_profile = self.__Worker_dictionary[username]
+            if worker_profile['is_locked']:
+                return False, 'Account is locked, please talk to your manager.'
+            if worker_profile['password'] == password:
+                worker_profile['failed_attempts'] = 0
+                return True, 'Login successful.'
+            else:
+                worker_profile['failed_attempts'] += 1
+                if worker_profile['failed_attempts'] >= 3:
+                    worker_profile['is_locked'] = True
+                    return False, 'Account is locked due to too many failed login attempts. Please talk to your manager.'
+                return False, 'Invalid password.'
+        return False, 'Username not found.'
+    
+    def get_worker(self, username):
+        return self.__Worker_dictionary.get(username, None)
+
+
+class EncryptLoginApplicationShell:
+    def __init__(self, worker_file):
+        self.worker_file = worker_file
+        self.keys_file = 'keys.pickle'
+        self.used_keys_file = 'used_keys.pickle'
+        self.load_keys()
+        self.__filesave = Storage()
+        try:
+            self.__filesave.load_workers(self.worker_file)
+            print('The worker list has been successfully loaded.')
+        except FileNotFoundError:
+            print('Worker information not found. This login portal will have no saved history.')
+        
+        self.add_default_manager()
+
+    def load_keys(self):
+        try:
+            if os.path.getsize(self.keys_file) > 0:
+                with open(self.keys_file, 'rb') as f:
+                    self.keys = pickle.load(f)
+            else:
+                self.keys = {}
+        except FileNotFoundError:
+            self.keys = {}
+
+        try:
+            if os.path.getsize(self.used_keys_file) > 0:
+                with open(self.used_keys_file, 'rb') as f:
+                    self.used_keys = pickle.load(f)
+            else:
+                self.used_keys = {}
+        except FileNotFoundError:
+            self.used_keys = {}
+
+
+    def save_keys(self):
+        with open(self.keys_file, 'wb') as f:
+            pickle.dump(self.keys, f)
+
+        with open(self.used_keys_file, 'wb') as f:
+            pickle.dump(self.used_keys, f)
+
+    def generate_profile_key(self):
+        key = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(10))
+        self.keys[key] = True
+        self.save_keys()
+        print(f"Generated Profile Key: {key}")
+        return key
+    
+    def validate_profile_key(self, key):
+        if key in self.keys:
+            del self.keys[key]
+            self.used_keys[key] = True
+            self.save_keys()
+            return True
+        elif key in self.used_keys:
+            print('This key has already been used. Talk to manager.')
+        else:
+            print('Wrong key, verify with manager')
+            return False
+
+    def add_default_manager(self):
+        default_username = 'OpeningMana!ger5634'
+        default_password = 'sDasvf43#DSa32'
+        default_first_name = 'Default'
+        default_last_name = 'Manager'
+        default_role = 'Manager'
+        default_access_level = 3
+        date_added = time.strftime('%Y-%m-%d %H:%M:%S')
+
+        if not self.__filesave.check_username(default_username):
+            manager_profile = Manager(
+                first_name=default_first_name,
+                last_name=default_last_name,
+                username=default_username,
+                password=default_password,
+                date_added=date_added
+            )
+            manager_profile.set_role(default_role)
+            manager_profile.set_access_level(default_access_level)
+            self.__filesave.add_worker(manager_profile.profile_information())
+            self.__filesave.save_worker(self.worker_file)
+            print('Default manager profile has been added.')
+        else:
+            manager_profile = self.__filesave.get_worker(default_username)
+            if manager_profile:
+                # Ensure profile is updated with correct role and access level
+                manager_profile['role'] = default_role
+                manager_profile['access_level'] = default_access_level
+                self.__filesave.save_worker(self.worker_file)
+                print('Default manager profile exists and has been updated.')
+            else:
+                print('Error: Default manager profile could not be retrieved.')
+
+        return manager_profile
+
+
+
+    def create_new_manager(self):
+        while True:
+            username = input('Enter a new manager username: ')
+            username_validator = UsernameValidator(username, self.__filesave._Storage__Worker_dictionary)
+            validate_username, message = username_validator.validate_username()
+            print(message)
+            if validate_username:
+                break
+
+        while True:
+            password = input('Enter a new manager password: ')
+            password_validator = PasswordValidator(password)
+            validate_password, message = password_validator.validate_password()
+            print(message)
+            if validate_password:
+                break
+
+        first_name = input('Enter the first name of the new manager: ')
+        last_name = input('Enter the last name of the new manager: ')
+
+        date_added = time.strftime('%Y-%m-%d %H:%M:%S')
+
+        manager_profile = Manager(first_name, last_name, username, password, date_added)
+        manager_profile.set_role('Manager')
+        manager_profile.set_access_level(3)
+        self.__filesave.add_worker(manager_profile.profile_information())
+        self.__filesave.save_worker(self.worker_file)
+        print('New manager profile has been successfully added.')
+
+    def list_workers(self):
+        print(self.__filesave.list_workers())
+
+    def remove_worker(self):
+        username = input('Enter the username to remove: ')
+        self.__filesave.remove_worker(username)
+        self.__filesave.save_worker(self.worker_file)
+
+    def save_worker_profile(self):
+        self.__filesave.save_worker(self.worker_file)
+
+    def new_sign_in(self):
+        max_attempts = 3
+        attempts = 0
+        while attempts < max_attempts:
+            while True:
+                username = input('Enter the new employee username: ')
+                username_validator = UsernameValidator(username, self.__filesave._Storage__Worker_dictionary)
+                validate_username, message = username_validator.validate_username()
+                print(message)
+                if validate_username:
+                    break
+
+            while True:
+                password = input('Enter the new employee password: ')
+                password_validator = PasswordValidator(password)
+                validate_password, message = password_validator.validate_password()
+                print(message)
+                if validate_password:
+                    break
+
+            first_name = input('Enter the first name of the new employee: ')
+            last_name = input('Enter the last name of the new employee: ')
+
+            # Prompt for profile key validation
+            while True:
+                profile_key = input('Enter the profile key provided by the manager: ')
+                if self.validate_profile_key(profile_key):
+                    date_added = time.strftime('%Y-%m-%d %H:%M:%S')
+                    worker_profile = WorkerProfile(first_name, last_name, username, password, date_added)
+                    self.__filesave.add_worker(worker_profile.profile_information())
+                    self.__filesave.save_worker(self.worker_file)
+                    print('New employee profile has been successfully added.')
+                    return  # Exit the function after successful sign-in
+                else:
+                    attempts += 1
+                    if attempts < max_attempts:
+                        print(f'Invalid profile key. Attempts remaining: {max_attempts - attempts}. Please try again.')
+                    else:
+                        print(f'Exceeded maximum attempts. Returning to main menu.')
+                        return
+
+                print('Invalid profile key. Please try again or contact the manager.')
+
+    def existing_sign_in(self):
+        username = input('Enter your username: ')
+        password = input('Enter your password: ')
+
+        success, message = self.__filesave.verify_login(username, password)
+        if success:
+            print(message)
+        else:
+            print(message)
+
+    def manager_sign_in(self):
+        username = input('Enter manager username: ')
+        password = input('Enter manager password: ')
+
+        success, message = self.__filesave.verify_login(username, password)
+        if success:
+            worker_profile = self.__filesave.get_worker(username)
+            if worker_profile and worker_profile['role'] == 'Manager':  # Ensure role is 'Manager'
+                print('Manager sign-in successful.')
+                return True
+            else:
+                print('You do not have manager privileges.')
+                return False
+        else:
+            print(message)
+            return False
+    
+    def delete_default_manager_if_needed(self):
+        default_username = 'OpeningMana!ger5634'
+
+        if self.__filesave.check_username(default_username):
+            confirmation = input(f"Are you sure you want to delete the default manager profile '{default_username}'? (yes/no): ")
+            if confirmation.lower() == 'yes':
+                self.__filesave.remove_worker(default_username)
+                self.__filesave.save_worker(self.worker_file)
+                print(f"Default manager profile '{default_username}' has been successfully deleted.")
+            else:
+                print("Deletion cancelled.")
+        else:
+            print(f"Default manager profile '{default_username}' does not exist.")
+
+    def edit_worker_profile(self):
+        username = input('Enter the username of the worker to edit: ')
+        worker_profile = self.__filesave.get_worker(username)
+        if worker_profile:
+            print('Editing worker profile. Enter "." to make no changes to that section. Press enter to keep current value.')
+
+            first_name = input(f'Enter new first name (current: {worker_profile["first_name"]}): ')
+            if first_name == '.':
+                first_name = worker_profile['first_name']
+
+            last_name = input(f'Enter new last name (current: {worker_profile["last_name"]}): ')
+            if last_name == '.':
+                last_name = worker_profile['last_name']
+
+            password = input(f'Enter new password (current: hidden): ')
+            if password == '.':
+                password = worker_profile['password']
+
+            role = input(f'Enter new role (current: {worker_profile["role"]}): ')
+            if role == '.':
+                role = worker_profile['role']
+
+            access_level = input(f'Enter new access level (current: {worker_profile["access_level"]}): ')
+            if access_level == '.':
+                access_level = worker_profile['access_level']
+            
+            is_locked = input(f'Is the account locked? (current: {worker_profile["is_locked"]}, enter "unlock" to unlock): ')
+            if is_locked == 'unlock':
+                worker_profile['is_locked'] = False
+                worker_profile['failed_attempts'] = 0
+
+            worker_profile['first_name'] = first_name
+            worker_profile['last_name'] = last_name
+            worker_profile['password'] = password
+            worker_profile['role'] = role
+            worker_profile['access_level'] = access_level
+
+            self.__filesave.add_worker(worker_profile)
+            self.__filesave.save_worker(self.worker_file)
+            print('Worker profile has been updated successfully.')
+        else:
+            print('Worker profile not found.')
+
+
+    def manager_menu(self):
+        prompt = ('''Manager Menu
+1. Create New Manager
+2. List Workers
+3. Edit Worker                  
+4. Remove Worker
+5. Generate Worker Key
+6. Delete Default Manager
+7. Exit
+
+Enter your command: ''')
+        while True:
+            choice = read_int_ranged(prompt, 1, 7)
+            if choice == 1:
+                self.create_new_manager()
+            elif choice == 2:
+                self.list_workers()
+            elif choice == 3:
+                self.edit_worker_profile()
+            elif choice == 4:
+                self.remove_worker()
+            elif choice == 5:
+                self.generate_profile_key()
+            elif choice == 6:
+                self.delete_default_manager_if_needed()
+            elif choice == 7:
+                break
+
+    def main_menu(self):
+        prompt = ('''Main Menu
+1. New Sign In
+2. Existing User Sign In
+3. Manager Sign-In
+4. Exit
+
+Enter your command: ''')
+        while True:
+            choice = read_int_ranged(prompt, 1, 4)
+            if choice == 1:
+                self.new_sign_in()
+            elif choice == 2:
+                self.existing_sign_in()
+            elif choice == 3:
+                if self.manager_sign_in():
+                    self.manager_menu()  # Call manager_menu() if manager sign-in is successful
+            elif choice == 4:
+                break
+
+
+if __name__ == "__main__":
+    app = EncryptLoginApplicationShell('WorkersList.pickle')
+    app.main_menu()
+    app.add_default_manager()
