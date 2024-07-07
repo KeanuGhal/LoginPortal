@@ -25,7 +25,7 @@ In order for new workers to sign up they require a special key, this can only be
 
 1. Clone the Repository.
 
-git clone https://github.com/KeanuGhal/LoginPortal/blob/main/LogInScreen
+git clone https://github.com/KeanuGhal/LoginPortal
 
 2. Navigate to the Project Directory
 
